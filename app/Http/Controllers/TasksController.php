@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 
 use App\Models\Task;
+use App\Models\User;
 
 class TasksController extends Controller
 {
@@ -13,11 +14,18 @@ class TasksController extends Controller
      */
     public function index()
     {
-        $tasks = Task::all();
+        $data = [];
+        if (\Auth::check()) {
+            $user = \Auth::user();
+            $tasks = $user->tasks()->orderBy('created_at', 'desc')->paginate(10);
+            $data = [
+                'user' => $user,
+                'tasks' => $tasks,
+            ];
+        }
 
-        return view('tasks.index', [
-            'tasks' => $tasks,
-        ]);
+        // dashboardビューでそれらを表示
+        return view('dashboard', $data);
     }
 
     /**
@@ -42,13 +50,14 @@ class TasksController extends Controller
             'content' => 'required',
         ]);
 
-        $task = new Task;
-        $task->status = $request->status;
-        $task->content = $request->content;
-        $task->save();
+        // 認証済みユーザー（閲覧者）の投稿として作成（リクエストされた値をもとに作成）
+        $request->user()->tasks()->create([
+            'status' => $request->status,
+            'content' => $request->content,
+        ]);
 
         // トップページへリダイレクトさせる
-        return redirect('/');
+        return redirect('/dashboard');
     }
 
     /**
@@ -58,9 +67,14 @@ class TasksController extends Controller
     {
         $task = Task::findOrFail($id);
 
-        return view('tasks.show', [
-            'task' => $task,
-        ]);
+        if (\Auth::id() === $task->user_id) {
+            return view('tasks.show', [
+                'task' => $task,
+            ]);
+        }
+
+        // トップページへリダイレクトさせる
+        return redirect('/dashboard');
     }
 
     /**
@@ -90,7 +104,7 @@ class TasksController extends Controller
         $task->content = $request->content;
         $task->save();
 
-        return redirect('/');
+        return redirect('/dashboard');
     }
 
     /**
@@ -98,9 +112,17 @@ class TasksController extends Controller
      */
     public function destroy($id)
     {
+        // idの値で投稿を検索して取得
         $task = Task::findOrFail($id);
-        $task->delete();
 
-        return redirect('/');
+        // 認証済みユーザー（閲覧者）がその投稿の所有者である場合は投稿を削除
+        if (\Auth::id() === $task->user_id) {
+            $task->delete();
+            // トップページへリダイレクトさせる
+            return redirect('/dashboard');
+        }
+
+        // トップページへリダイレクトさせる
+        return redirect('/dashboard');
     }
 }
